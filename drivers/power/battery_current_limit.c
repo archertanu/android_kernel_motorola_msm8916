@@ -27,6 +27,7 @@
 #include <linux/cpu.h>
 #include <linux/msm_bcl.h>
 #include <linux/power_supply.h>
+#include <linux/cpumask.h>
 
 #define BCL_DEV_NAME "battery_current_limit"
 #define BCL_NAME_LENGTH 20
@@ -206,6 +207,16 @@ static uint32_t battery_soc_val = 100;
 static uint32_t soc_low_threshold;
 static struct power_supply bcl_psy;
 static const char bcl_psy_name[] = "bcl";
+static cpumask_var_t bcl_cpu_online_mask;
+
+static void bcl_update_online_mask(void)
+{
+        get_online_cpus();
+        cpumask_copy(bcl_cpu_online_mask, cpu_online_mask);
+        put_online_cpus();
+        pr_debug("BCL online Mask tracked %u\n",
+                                cpumask_weight(bcl_cpu_online_mask));
+}
 static bool bcl_hit_shutdown_voltage;
 static int bcl_battery_get_property(struct power_supply *psy,
 				enum power_supply_property prop,
@@ -255,6 +266,8 @@ static void __ref bcl_handle_hotplug(void)
 	int ret = 0, _cpu = 0;
 
 	mutex_lock(&bcl_hotplug_mutex);
+	if (cpumask_empty(bcl_cpu_online_mask))
+		bcl_update_online_mask();
 
 	if  (battery_soc_val <= soc_low_threshold
 		|| bcl_vph_state == BCL_LOW_THRESHOLD)
@@ -266,8 +279,9 @@ static void __ref bcl_handle_hotplug(void)
 		goto handle_hotplug_exit;
 
 	for_each_possible_cpu(_cpu) {
-		if (!(bcl_hotplug_mask & BIT(_cpu))
+		if ((!(bcl_hotplug_mask & BIT(_cpu))
 			&& !(bcl_soc_hotplug_mask & BIT(_cpu)))
+			|| !(cpumask_test_cpu(_cpu, bcl_cpu_online_mask)))
 			continue;
 
 		if (bcl_hotplug_request & BIT(_cpu)) {
@@ -280,7 +294,8 @@ static void __ref bcl_handle_hotplug(void)
 			else
 				pr_info("Set Offline CPU:%d\n", _cpu);
 		} else {
-			if (cpu_online(_cpu))
+			if (cpu_online(_cpu)
+				|| !(prev_hotplug_request & BIT(_cpu)))
 				continue;
 			ret = cpu_up(_cpu);
 			if (ret) {
@@ -304,6 +319,9 @@ static int __ref bcl_cpu_ctrl_callback(struct notifier_block *nfb,
 	uint32_t cpu = (uintptr_t)hcpu;
 
 	if (action == CPU_UP_PREPARE || action == CPU_UP_PREPARE_FROZEN) {
+		if (!cpumask_test_and_set_cpu(cpu, bcl_cpu_online_mask))
+			pr_debug("BCL online Mask: %u\n",
+				cpumask_weight(bcl_cpu_online_mask));
 		if (bcl_hotplug_request & BIT(cpu)) {
 			pr_debug("preventing CPU%d from coming online\n", cpu);
 			return NOTIFY_BAD;
@@ -629,9 +647,11 @@ mode_store(struct device *dev, struct device_attribute *attr,
 	}
 	if (!strncmp(buf, "enable", 6)) {
 		bcl_mode_set(BCL_DEVICE_ENABLED);
+		bcl_update_online_mask();
 		pr_info("bcl enabled\n");
 	} else if (!strncmp(buf, "disable", 7)) {
 		bcl_mode_set(BCL_DEVICE_DISABLED);
+		cpumask_clear(bcl_cpu_online_mask);
 		pr_info("bcl disabled\n");
 	} else {
 		return -EINVAL;
@@ -906,15 +926,17 @@ static ssize_t hotplug_mask_store(struct device *dev,
 {
 	int ret = 0, val = 0;
 
-	if (!bcl_hotplug_enabled)
-		return -ENODEV;
-
 	ret = convert_to_int(buf, &val);
 	if (ret)
 		return ret;
 
 	bcl_hotplug_mask = val;
 	pr_info("bcl hotplug mask updated to %d\n", bcl_hotplug_mask);
+
+	if (!bcl_hotplug_mask && !bcl_soc_hotplug_mask)
+		bcl_hotplug_enabled = false;
+	else
+		bcl_hotplug_enabled = true;
 
 	return count;
 }
@@ -925,15 +947,17 @@ static ssize_t hotplug_soc_mask_store(struct device *dev,
 {
 	int ret = 0, val = 0;
 
-	if (!bcl_hotplug_enabled)
-		return -ENODEV;
-
 	ret = convert_to_int(buf, &val);
 	if (ret)
 		return ret;
 
 	bcl_soc_hotplug_mask = val;
 	pr_info("bcl soc hotplug mask updated to %d\n", bcl_soc_hotplug_mask);
+
+	if (!bcl_hotplug_mask && !bcl_soc_hotplug_mask)
+		bcl_hotplug_enabled = false;
+	else
+		bcl_hotplug_enabled = true;
 
 	return count;
 }
@@ -1324,11 +1348,13 @@ static int bcl_probe(struct platform_device *pdev)
 					 "qcom,bcl-freq-control-list");
 	bcl_hotplug_mask = get_mask_from_core_handle(pdev,
 					 "qcom,bcl-hotplug-list");
-	if (bcl_hotplug_mask)
-		bcl_hotplug_enabled = true;
-
 	bcl_soc_hotplug_mask = get_mask_from_core_handle(pdev,
 					 "qcom,bcl-soc-hotplug-list");
+
+        if (!bcl_hotplug_mask && !bcl_soc_hotplug_mask)
+                bcl_hotplug_enabled = false;
+        else
+                bcl_hotplug_enabled = true;
 
 	ret = probe_btm_properties(bcl);
 
@@ -1340,6 +1366,7 @@ static int bcl_probe(struct platform_device *pdev)
 		pr_err("Cannot create bcl sysfs\n");
 		return ret;
 	}
+	cpumask_clear(bcl_cpu_online_mask);
 	bcl_psy.name = bcl_psy_name;
 	bcl_psy.type = POWER_SUPPLY_TYPE_BMS;
 	bcl_psy.get_property     = bcl_battery_get_property;
