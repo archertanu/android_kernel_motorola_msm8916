@@ -200,7 +200,6 @@ static enum bcl_threshold_state bcl_vph_state = BCL_THRESHOLD_DISABLED,
 static DEFINE_MUTEX(bcl_notify_mutex);
 static uint32_t bcl_hotplug_request, bcl_hotplug_mask, bcl_soc_hotplug_mask;
 static uint32_t bcl_frequency_mask;
-static uint32_t prev_hotplug_request;
 static DEFINE_MUTEX(bcl_hotplug_mutex);
 static bool bcl_hotplug_enabled;
 static uint32_t battery_soc_val = 100;
@@ -275,9 +274,6 @@ static void __ref bcl_handle_hotplug(void)
 	else
 		bcl_hotplug_request = 0;
 
-	if (bcl_hotplug_request == prev_hotplug_request)
-		goto handle_hotplug_exit;
-
 	for_each_possible_cpu(_cpu) {
 		if ((!(bcl_hotplug_mask & BIT(_cpu))
 			&& !(bcl_soc_hotplug_mask & BIT(_cpu)))
@@ -294,8 +290,7 @@ static void __ref bcl_handle_hotplug(void)
 			else
 				pr_info("Set Offline CPU:%d\n", _cpu);
 		} else {
-			if (cpu_online(_cpu)
-				|| !(prev_hotplug_request & BIT(_cpu)))
+			if (cpu_online(_cpu))
 				continue;
 			ret = cpu_up(_cpu);
 			if (ret) {
@@ -308,8 +303,6 @@ static void __ref bcl_handle_hotplug(void)
 		}
 	}
 
-	prev_hotplug_request = bcl_hotplug_request;
-handle_hotplug_exit:
 	mutex_unlock(&bcl_hotplug_mutex);
 	return;
 }
@@ -545,8 +538,6 @@ static int vph_disable(void)
 vph_disable_exit:
 	return ret;
 }
-
-
 
 static void bcl_vph_notification(enum qpnp_tm_state state, void *ctx)
 {
