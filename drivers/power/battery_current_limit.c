@@ -656,8 +656,8 @@ mode_store(struct device *dev, struct device_attribute *attr,
 		return -EPERM;
 	}
 	if (!strncmp(buf, "enable", 6)) {
-		bcl_mode_set(BCL_DEVICE_ENABLED);
 		bcl_update_online_mask();
+		bcl_mode_set(BCL_DEVICE_ENABLED);
 		pr_info("bcl enabled\n");
 	} else if (!strncmp(buf, "disable", 7)) {
 		bcl_mode_set(BCL_DEVICE_DISABLED);
