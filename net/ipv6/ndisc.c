@@ -883,8 +883,13 @@ static void ndisc_recv_na(struct sk_buff *skb)
 	 * there will be a NA proxy and unsolicitd packets are attacks
 	 * and thus should not be accepted.
 	 */
+<<<<<<< HEAD
 	if (!msg->icmph.icmp6_solicited && idev &&
 	    idev->cnf.drop_unsolicited_na)
+=======
+	if (idev && idev->cnf.drop_unsolicited_na &&
+	    !msg->icmph.icmp6_solicited)
+>>>>>>> 2c5d5d2f4ce... ipv6: add option to drop unsolicited neighbor advertisements
 		return;
 
 	if (!ndisc_parse_options(msg->opt, ndoptlen, &ndopts)) {
