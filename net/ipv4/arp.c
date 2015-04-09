@@ -811,7 +811,7 @@ static int arp_process(struct sk_buff *skb)
   *	there will be an ARP proxy and gratuitous ARP frames are attacks
   *	and thus should not be accepted.
   */
-	if (sip == tip && IN_DEV_ORCONF(in_dev, DROP_GRATUITOUS_ARP))
+	if (IN_DEV_CONF_GET(in_dev, DROP_GRATUITOUS_ARP) && sip == tip)
 		goto out;
 
 /*
