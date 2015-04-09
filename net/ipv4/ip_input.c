@@ -361,8 +361,7 @@ static int ip_rcv_finish(struct sk_buff *skb)
 	} else if (rt->rt_type == RTN_BROADCAST) {
 		IP_UPD_PO_STATS_BH(dev_net(rt->dst.dev), IPSTATS_MIB_INBCAST,
 				skb->len);
-	} else if (skb->pkt_type == PACKET_BROADCAST ||
-		   skb->pkt_type == PACKET_MULTICAST) {
+	} else {
 		struct in_device *in_dev = __in_dev_get_rcu(skb->dev);
 
 		/* RFC 1122 3.3.6:
@@ -381,9 +380,18 @@ static int ip_rcv_finish(struct sk_buff *skb)
 		 * so-called "hole-196" attack) so do it for both.
 		 */
 		if (in_dev &&
+<<<<<<< HEAD
 		    IN_DEV_ORCONF(in_dev, DROP_UNICAST_IN_L2_MULTICAST))
 			goto drop;
 	}
+=======
+		    IN_DEV_ORCONF(in_dev, DROP_UNICAST_IN_L2_MULTICAST) &&
+		    (skb->pkt_type == PACKET_BROADCAST ||
+		     skb->pkt_type == PACKET_MULTICAST))
+			goto drop;
+	}
+
+>>>>>>> 9ca32de8530... ipv4: add option to drop unicast encapsulated in L2 multicast
 
 	return dst_input(skb);
 

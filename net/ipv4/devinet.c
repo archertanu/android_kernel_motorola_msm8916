@@ -2122,6 +2122,7 @@ static struct devinet_sysctl_table {
 					      "drop_unicast_in_l2_multicast"),
 		DEVINET_SYSCTL_RW_ENTRY(DROP_GRATUITOUS_ARP,
 					"drop_gratuitous_arp"),
+
 	},
 };
 
