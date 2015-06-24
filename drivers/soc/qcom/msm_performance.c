@@ -668,11 +668,20 @@ static int init_cluster_control(void)
 	for (i = 0; i < num_clusters; i++) {
 		managed_clusters[i] = kcalloc(1, sizeof(struct cluster),
 								GFP_KERNEL);
-		if (!managed_clusters[i]) {
-			pr_err("msm_perf:Cluster %u mem alloc failed\n", i);
+		if (!managed_clusters[i])
+			return -ENOMEM;
+		if (!alloc_cpumask_var(&managed_clusters[i]->cpus,
+		     GFP_KERNEL)) {
+			pr_err("msm_perf:Cluster %u cpu alloc failed\n",
+			       i);
 			return -ENOMEM;
 		}
-
+		if (!alloc_cpumask_var(&managed_clusters[i]->offlined_cpus,
+		     GFP_KERNEL)) {
+			pr_err("msm_perf:Cluster %u off_cpus alloc failed\n",
+			       i);
+			return -ENOMEM;
+		}
 		managed_clusters[i]->max_cpu_request = -1;
 	}
 
