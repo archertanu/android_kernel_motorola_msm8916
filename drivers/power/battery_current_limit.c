@@ -1399,6 +1399,8 @@ static int bcl_probe(struct platform_device *pdev)
 static int bcl_remove(struct platform_device *pdev)
 {
 	remove_bcl_sysfs(gbcl);
+	if (gbcl->battery_monitor_wq)
+		destroy_workqueue(gbcl->battery_monitor_wq);
 	platform_set_drvdata(pdev, NULL);
 	return 0;
 }
