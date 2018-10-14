@@ -588,7 +588,9 @@
 		qcom,bcl-enable;
 		qcom,ibat-vadc = <&pm8916_vadc>;
 		qcom,ibat-threshold-adc_tm = <&pm8916_adc_tm>;
-		qcom,bcl-hotplug-list = <&CPU0 &CPU1 &CPU2 &CPU3 >;
+		qcom,bcl-freq-control-list = <&CPU0 &CPU1 &CPU2 &CPU3 >;
+		qcom,bcl-hotplug-list = <&CPU2 &CPU3 >;
+		qcom,bcl-soc-hotplug-list = <&CPU0 &CPU1 &CPU2 &CPU3 >;
 		qcom,ibat-monitor {
 			high-threshold-uamp = <3000000>;
 			low-threshold-uamp = <1000000>;
@@ -602,6 +604,7 @@
 			vph-channel = <0x06>;
 			vph-high-threshold-uv = <3700000>;
 			vph-low-threshold-uv = <3500000>;
+			soc-low-threshold = <20>;
 			thermal-handle = <&msm_thermal_freq>;
 			charge-ic-handle = <&smb1357_otg_vreg>;
 		};
