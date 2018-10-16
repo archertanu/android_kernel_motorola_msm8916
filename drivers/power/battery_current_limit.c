@@ -73,6 +73,7 @@ enum bcl_iavail_threshold_type {
 	BCL_LOW_THRESHOLD_TYPE_MIN = 0,
 	BCL_LOW_THRESHOLD_TYPE,
 	BCL_HIGH_THRESHOLD_TYPE,
+	BCL_LOW_THRESHOLD_TYPE_MAX,
 	BCL_THRESHOLD_TYPE_MAX,
 };
 
@@ -196,11 +197,13 @@ static int bcl_config_vph_adc(struct bcl_context *bcl,
 			enum bcl_iavail_threshold_type thresh_type);
 static struct bcl_context *gbcl;
 static enum bcl_threshold_state bcl_vph_state = BCL_THRESHOLD_DISABLED,
+		bcl_vbat_state = BCL_THRESHOLD_DISABLED,
 		bcl_ibat_state = BCL_THRESHOLD_DISABLED,
 		bcl_soc_state = BCL_THRESHOLD_DISABLED;
 static DEFINE_MUTEX(bcl_notify_mutex);
 static uint32_t bcl_hotplug_request, bcl_hotplug_mask, bcl_soc_hotplug_mask;
 static uint32_t bcl_frequency_mask;
+static uint32_t prev_hotplug_request;
 static DEFINE_MUTEX(bcl_hotplug_mutex);
 static bool bcl_hotplug_enabled;
 static uint32_t battery_soc_val = 100;
@@ -230,7 +233,7 @@ static int bcl_battery_set_property(struct power_supply *psy,
 {
 	return 0;
 }
-static void power_supply_callback_soc(struct power_supply *psy)
+static void power_supply_callback_soc(void)
 {
 	static struct power_supply *bms_psy;
 	union power_supply_propval ret = {0,};
@@ -242,7 +245,7 @@ static void power_supply_callback_soc(struct power_supply *psy)
 	}
 
  	if (!bms_psy)
-		bms_psy = power_supply_get_by_name("bms");
+		bms_psy = power_supply_get_by_name("battery");
 	if (bms_psy) {
 		battery_percentage = bms_psy->get_property(bms_psy,
 				POWER_SUPPLY_PROP_CAPACITY, &ret);
@@ -252,31 +255,53 @@ static void power_supply_callback_soc(struct power_supply *psy)
 		prev_soc_state = bcl_soc_state;
 		bcl_soc_state = (battery_soc_val <= soc_low_threshold) ?
 					BCL_LOW_THRESHOLD : BCL_HIGH_THRESHOLD;
+		pr_info("battery_soc_val:%d bcl_soc_state:%d prev_soc_state:%d\n", battery_soc_val, bcl_soc_state, prev_soc_state);
 		if (bcl_soc_state == prev_soc_state)
 			return;
                 queue_work(gbcl->battery_monitor_wq, &gbcl->battery_monitor_work);
         }
 }
-static void power_supply_callback_vbatt(struct power_supply *psy)
+static void power_supply_callback_vbatt(void)
 {
 	int vbatt = 0;
-	if (bcl_hit_shutdown_voltage)
-		return;
+	int btm_vph_mid_thresh = (gbcl->btm_vph_low_thresh + (gbcl->btm_vph_high_thresh - gbcl->btm_vph_low_thresh) * 2 / 3);
+	enum bcl_threshold_state prev_vbat_state;
+
+	prev_vbat_state = bcl_vbat_state;
+	bcl_vbat_state = BCL_THRESHOLD_DISABLED;
+
+	if (bcl_hit_shutdown_voltage) {
+		if (bcl_vph_state == BCL_HIGH_THRESHOLD)
+			bcl_hit_shutdown_voltage = false;
+		else {
+			bcl_config_vph_adc(gbcl, BCL_HIGH_THRESHOLD_TYPE);
+			return;
+		}
+	}
 	if (0 != bcl_get_battery_voltage(&vbatt))
 		return;
-	if (vbatt <= gbcl->btm_vph_low_thresh) {
+	if (vbatt <= gbcl->btm_vph_low_thresh)
 		/*relay the notification to charger ic driver*/
 		bcl_config_vph_adc(gbcl, BCL_LOW_THRESHOLD_TYPE_MIN);
-	} else if ((vbatt  > gbcl->btm_vph_low_thresh) &&
-		(vbatt <= gbcl->btm_vph_high_thresh))
+	else if ((vbatt > gbcl->btm_vph_high_thresh) &&
+		(bcl_vph_state != BCL_LOW_THRESHOLD))
+		bcl_config_vph_adc(gbcl, BCL_LOW_THRESHOLD_TYPE_MAX);
+	else if (bcl_vph_state != BCL_LOW_THRESHOLD)
 		bcl_config_vph_adc(gbcl, BCL_LOW_THRESHOLD_TYPE);
 	else
 		bcl_config_vph_adc(gbcl, BCL_HIGH_THRESHOLD_TYPE);
+
+	bcl_vbat_state = (vbatt <= btm_vph_mid_thresh) ?
+				BCL_LOW_THRESHOLD : BCL_HIGH_THRESHOLD;
+	pr_info("vbatt:%d thresh:%d bcl_vbat_state:%d prev_vbat_state:%d\n", vbatt, btm_vph_mid_thresh, bcl_vbat_state, prev_vbat_state);
+	if (bcl_vbat_state == prev_vbat_state)
+		return;
+	queue_work(gbcl->battery_monitor_wq, &gbcl->battery_monitor_work);
 }
 static void power_supply_callback(struct power_supply *psy)
 {
-        power_supply_callback_soc(psy);
-        power_supply_callback_vbatt(psy);
+        power_supply_callback_soc();
+        power_supply_callback_vbatt();
 }
 
 static void __ref bcl_handle_hotplug(void)
@@ -287,11 +312,18 @@ static void __ref bcl_handle_hotplug(void)
 	if (cpumask_empty(bcl_cpu_online_mask))
 		bcl_update_online_mask();
 
-	if  (bcl_soc_state == BCL_LOW_THRESHOLD
-		|| bcl_vph_state == BCL_LOW_THRESHOLD)
+	if  ((bcl_soc_state == BCL_LOW_THRESHOLD &&
+		(bcl_vph_state == BCL_LOW_THRESHOLD || bcl_vbat_state == BCL_LOW_THRESHOLD))
+		|| (bcl_vph_state == BCL_LOW_THRESHOLD && bcl_vbat_state == BCL_LOW_THRESHOLD))
 		bcl_hotplug_request = bcl_soc_hotplug_mask;
+	else if (bcl_vph_state == BCL_LOW_THRESHOLD
+		|| bcl_vbat_state == BCL_LOW_THRESHOLD)
+		bcl_hotplug_request = bcl_hotplug_mask;
 	else
 		bcl_hotplug_request = 0;
+
+	if (bcl_hotplug_request == prev_hotplug_request)
+		goto handle_hotplug_exit;
 
 	for_each_possible_cpu(_cpu) {
 		if ((!(bcl_hotplug_mask & BIT(_cpu))
@@ -309,7 +341,8 @@ static void __ref bcl_handle_hotplug(void)
 			else
 				pr_info("Set Offline CPU:%d\n", _cpu);
 		} else {
-			if (cpu_online(_cpu))
+			if (cpu_online(_cpu)
+				|| !(prev_hotplug_request & BIT(_cpu)))
 				continue;
 			ret = cpu_up(_cpu);
 			if (ret) {
@@ -322,6 +355,8 @@ static void __ref bcl_handle_hotplug(void)
 		}
 	}
 
+	prev_hotplug_request = bcl_hotplug_request;
+handle_hotplug_exit:
 	mutex_unlock(&bcl_hotplug_mutex);
 	return;
 }
@@ -360,6 +395,7 @@ static int bcl_cpufreq_callback(struct notifier_block *nfb,
 	switch (event) {
 	case CPUFREQ_INCOMPATIBLE:
 		if (bcl_vph_state == BCL_LOW_THRESHOLD
+			|| bcl_vbat_state == BCL_LOW_THRESHOLD
                         || bcl_soc_state == BCL_LOW_THRESHOLD) {
 			cpufreq_verify_within_limits(policy, 0,
 				gbcl->btm_freq_max);
@@ -419,40 +455,31 @@ static int bcl_get_battery_voltage(int *vbatt)
 
 static void battery_monitor_work(struct work_struct *work)
 {
-	int vbatt = 0;
+
 	struct bcl_context *bcl = container_of(work,
 			struct bcl_context, battery_monitor_work);
+
+	pr_info("battery_monitor_work triggered");
 
 	if (gbcl->bcl_mode == BCL_DEVICE_ENABLED) {
 		bcl->btm_mode = BCL_VPH_MONITOR_MODE;
 		update_cpu_freq();
 		bcl_handle_hotplug();
-		bcl_get_battery_voltage(&vbatt);
-		pr_debug("vbat is %d\n", vbatt);
-		if (bcl_vph_state == BCL_LOW_THRESHOLD) {
-			if (vbatt <= gbcl->btm_vph_low_thresh) {
-				/*relay the notification to charger ic driver*/
-				if (bcl->btm_charger_ic_low_thresh ==
-					gbcl->btm_vph_adc_param.low_thr) {
-					bcl_hit_shutdown_voltage = true;
-				} else
-				bcl_config_vph_adc(gbcl,
-					BCL_LOW_THRESHOLD_TYPE_MIN);
-			} else
-				bcl_config_vph_adc(gbcl,
-					BCL_HIGH_THRESHOLD_TYPE);
-		} else {
-			bcl_config_vph_adc(gbcl, BCL_LOW_THRESHOLD_TYPE);
-		}
+		power_supply_callback_vbatt();
 	}
 }
 
 static void bcl_vph_notify(enum bcl_threshold_state thresh_type)
 {
-	pr_debug("type: %s\n", thresh_type == BCL_LOW_THRESHOLD ? "low" :
+	pr_info("type: %s\n", thresh_type == BCL_LOW_THRESHOLD ? "low" :
 		thresh_type == BCL_HIGH_THRESHOLD ? "high" :
 		"unknown");
 	bcl_vph_state = thresh_type;
+	/*relay the notification to charger ic driver*/
+	if ((bcl_vph_state == BCL_LOW_THRESHOLD) &&
+		(gbcl->btm_charger_ic_low_thresh ==
+		gbcl->btm_vph_adc_param.low_thr))
+		bcl_hit_shutdown_voltage = true;
 	queue_work(gbcl->battery_monitor_wq, &gbcl->battery_monitor_work);
 }
 
@@ -467,8 +494,11 @@ static int bcl_config_vph_adc(struct bcl_context *bcl,
 		return -EINVAL;
 
 	bcl->btm_vph_adc_param.low_thr = bcl->btm_vph_low_thresh;
-
 	bcl->btm_vph_adc_param.high_thr = bcl->btm_vph_high_thresh;
+
+	bcl->btm_vph_adc_param.timer_interval =
+			adc_timer_val_usec[ADC_MEAS1_INTERVAL_250MS];
+
 	switch (thresh_type) {
 	case BCL_HIGH_THRESHOLD_TYPE:
 		bcl->btm_vph_adc_param.state_request = ADC_TM_HIGH_THR_ENABLE;
@@ -480,12 +510,15 @@ static int bcl_config_vph_adc(struct bcl_context *bcl,
 		bcl->btm_vph_adc_param.state_request = ADC_TM_LOW_THR_ENABLE;
 		bcl->btm_vph_adc_param.low_thr = bcl->btm_charger_ic_low_thresh;
 		break;
+	case BCL_LOW_THRESHOLD_TYPE_MAX:
+		bcl->btm_vph_adc_param.state_request = ADC_TM_LOW_THR_ENABLE;
+		bcl->btm_vph_adc_param.timer_interval =
+			adc_timer_val_usec[ADC_MEAS1_INTERVAL_1S];
+		break;
 	default:
 		pr_err("Invalid threshold type:%d\n", thresh_type);
 		return -EINVAL;
 	}
-	bcl->btm_vph_adc_param.timer_interval =
-			adc_timer_val_usec[ADC_MEAS1_INTERVAL_31P3MS];
 	bcl->btm_vph_adc_param.btm_ctx = bcl;
 	bcl->btm_vph_adc_param.threshold_notification = bcl_vph_notification;
 	bcl->btm_vph_adc_param.channel = bcl->btm_vph_chan;
@@ -557,6 +590,8 @@ static int vph_disable(void)
 vph_disable_exit:
 	return ret;
 }
+
+
 
 static void bcl_vph_notification(enum qpnp_tm_state state, void *ctx)
 {
@@ -1092,19 +1127,11 @@ static int bcl_suspend(struct device *dev)
 static int bcl_resume(struct device *dev)
 {
 	struct bcl_context *bcl = dev_get_drvdata(dev);
-	int vbatt = 0;
 	if (bcl->bcl_monitor_type == BCL_IBAT_MONITOR_TYPE &&
 		bcl->bcl_mode == BCL_DEVICE_ENABLED) {
 		bcl->btm_mode = BCL_VPH_MONITOR_MODE;
-		bcl_get_battery_voltage(&vbatt);
-		if (vbatt <= gbcl->btm_vph_low_thresh) {
-			/*relay the notification to charger ic driver*/
-			bcl_config_vph_adc(gbcl, BCL_LOW_THRESHOLD_TYPE_MIN);
-		} else if ((vbatt  > gbcl->btm_vph_low_thresh) &&
-			(vbatt <= gbcl->btm_vph_high_thresh))
-			bcl_config_vph_adc(gbcl, BCL_LOW_THRESHOLD_TYPE);
-		else
-			bcl_config_vph_adc(gbcl, BCL_HIGH_THRESHOLD_TYPE);
+		power_supply_callback_soc();
+		power_supply_callback_vbatt();
 	}
 	return 0;
 }
