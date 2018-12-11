@@ -173,6 +173,7 @@ struct bcl_context {
 	int btm_vph_chan;
 	uint32_t btm_vph_high_thresh;
 	uint32_t btm_vph_low_thresh;
+	uint32_t btm_vph_mid_thresh;
 	/*charger ic low voltage threshold */
 	uint32_t btm_charger_ic_low_thresh;
 	struct qpnp_adc_tm_btm_param btm_vph_adc_param;
@@ -264,7 +265,6 @@ static void power_supply_callback_soc(void)
 static void power_supply_callback_vbatt(void)
 {
 	int vbatt = 0;
-	int btm_vph_mid_thresh = (gbcl->btm_vph_low_thresh + (gbcl->btm_vph_high_thresh - gbcl->btm_vph_low_thresh) * 2 / 3);
 	enum bcl_threshold_state prev_vbat_state;
 
 	prev_vbat_state = bcl_vbat_state;
@@ -291,9 +291,9 @@ static void power_supply_callback_vbatt(void)
 	else
 		bcl_config_vph_adc(gbcl, BCL_HIGH_THRESHOLD_TYPE);
 
-	bcl_vbat_state = (vbatt <= btm_vph_mid_thresh) ?
+	bcl_vbat_state = (vbatt <= gbcl->btm_vph_mid_thresh) ?
 				BCL_LOW_THRESHOLD : BCL_HIGH_THRESHOLD;
-	pr_info("vbatt:%d thresh:%d bcl_vbat_state:%d prev_vbat_state:%d\n", vbatt, btm_vph_mid_thresh, bcl_vbat_state, prev_vbat_state);
+	pr_info("vbatt:%d thresh:%d bcl_vbat_state:%d prev_vbat_state:%d\n", vbatt, gbcl->btm_vph_mid_thresh, bcl_vbat_state, prev_vbat_state);
 	if (bcl_vbat_state == prev_vbat_state)
 		return;
 	queue_work(gbcl->battery_monitor_wq, &gbcl->battery_monitor_work);
@@ -946,6 +946,7 @@ static ssize_t vph_low_store(struct device *dev,
 	if (ret)
 		return ret;
 	gbcl->btm_vph_low_thresh = val;
+	gbcl->btm_vph_mid_thresh = (gbcl->btm_vph_low_thresh + (gbcl->btm_vph_high_thresh - gbcl->btm_vph_low_thresh) * 2 / 3);
 
 	return count;
 }
@@ -961,6 +962,7 @@ static ssize_t vph_high_store(struct device *dev,
 	if (ret)
 		return ret;
 	gbcl->btm_vph_high_thresh = val;
+	gbcl->btm_vph_mid_thresh = (gbcl->btm_vph_low_thresh + (gbcl->btm_vph_high_thresh - gbcl->btm_vph_low_thresh) * 2 / 3);
 
 	return count;
 }
@@ -1268,6 +1270,8 @@ static int probe_btm_properties(struct bcl_context *bcl)
 	ret = of_property_read_u32(ibat_node, key, &bcl->btm_vph_low_thresh);
 	if (ret < 0)
 		goto btm_probe_exit;
+
+	bcl->btm_vph_mid_thresh = (bcl->btm_vph_low_thresh + (bcl->btm_vph_high_thresh - bcl->btm_vph_low_thresh) * 2 / 3);
 
         key = "soc-low-threshold";
         ret = of_property_read_u32(ibat_node, key, &soc_low_threshold);
