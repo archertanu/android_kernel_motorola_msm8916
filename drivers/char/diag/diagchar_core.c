@@ -1468,6 +1468,8 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 	int copy_dci_data = 0;
 	int exit_stat = 0;
 	int write_len = 0;
+	struct pid *pid_struct = NULL;
+	struct task_struct *task_s = NULL;
 
 	for (i = 0; i < driver->num_clients; i++)
 		if (driver->client_map[i].pid == current->tgid)
@@ -1594,8 +1596,18 @@ static ssize_t diagchar_read(struct file *file, char __user *buf, size_t count,
 		list_for_each_safe(start, temp, &driver->dci_client_list) {
 			entry = list_entry(start, struct diag_dci_client_tbl,
 									track);
-			if (entry->client->tgid != current->tgid)
+			pid_struct = find_get_pid(entry->tgid);
+			if (!pid_struct)
 				continue;
+			task_s = get_pid_task(pid_struct, PIDTYPE_PID);
+			if (!task_s) {
+				pr_debug("diag: valid task doesn't exist for pid = %d\n",
+				entry->tgid);
+				continue;
+			}
+			if (task_s == entry->client)
+				if (entry->client->tgid != current->tgid)
+					continue;
 			if (!entry->in_service)
 				continue;
 			COPY_USER_SPACE_OR_EXIT(buf + ret, data_type,
