@@ -124,6 +124,71 @@ config CPU_FREQ_DEFAULT_GOV_LIONFISH
 	help
 	  Use the CPUFreq governor 'lionfish' as default.
 
+config CPU_FREQ_DEFAULT_GOV_DARKNESS
+ 	bool "darkness"
+ 	select CPU_FREQ_GOV_DARKNESS
+
+config CPU_FREQ_DEFAULT_GOV_WHEATLEY
+ 	bool "wheatley"
+ 	select CPU_FREQ_GOV_WHEATLEY
+ 	select CPU_FREQ_GOV_PERFORMANCE
+ 	---help---
+ 	  Use the CPUFreq governor 'wheatley' as defaul
+
+config CPU_FREQ_DEFAULT_GOV_ALUCARD
+ 	bool "alucard"
+ 	select CPU_FREQ_GOV_ALUCARD
+
+
+config CPU_FREQ_DEFAULT_GOV_ELEMENTALX
+	bool "elementalx"
+	select CPU_FREQ_GOV_ELEMENTALX
+	select CPU_FREQ_GOV_PERFORMANCE
+	help
+	  Use the CPUFreq governor 'elementalx' as default.
+
+config CPU_FREQ_DEFAULT_GOV_TRIPNDROID
+	bool "tripndroid"
+	select CPU_FREQ_GOV_TRIPNDROID
+	help
+	  Select tripndroid cpu governor as default
+
+
+config CPU_FREQ_DEFAULT_GOV_LAGFREE
+	bool "lagfree"
+	select CPU_FREQ_GOV_LAGFREE
+	select CPU_FREQ_GOV_PERFORMANCE
+
+config CPU_FREQ_DEFAULT_GOV_BLU_ACTIVE
+	bool "blu_active"
+	select CPU_FREQ_GOV_BLU_ACTIVE
+	help
+	  Use the CPUFreq governor 'blu_active' as default. This allows
+	  you to get a full dynamic cpu frequency capable system by simply
+	  loading your cpufreq low-level hardware driver, using the
+	  'interactive' governor for latency-sensitive workloads.
+
+config CPU_FREQ_DEFAULT_GOV_YANKACTIVE
+ 	bool "yankactive"
+ 	select CPU_FREQ_GOV_YANKACTIVE
+
+
+config CPU_FREQ_DEFAULT_GOV_CULTIVATION
+	bool "cultivation"
+	select CPU_FREQ_GOV_CULTIVATION
+	help
+	Use the CPUFreq governor 'cultivation' as default.
+
+
+
+
+
+
+
+
+
+
+
 endchoice
 
 config CPU_FREQ_GOV_PERFORMANCE
@@ -243,6 +308,83 @@ config CPU_FREQ_GOV_LIONFISH
 	  module will be called cpufreq_lionfish.
 
 	  If in doubt, say N
+
+
+config CPU_FREQ_GOV_ELEMENTALX
+	tristate "'elementalx' cpufreq policy governor"
+	select CPU_FREQ_TABLE
+	default y
+	help
+	  'elementalx' - This driver adds a dynamic cpufreq policy governor.
+
+config CPU_FREQ_GOV_ALUCARD
+ 	tristate "'alucard' cpufreq governor"
+ 	depends on CPU_FREQ
+	default y
+
+
+config CPU_FREQ_GOV_DARKNESS
+	tristate "'darkness' cpufreq policy governor"
+
+config CPU_FREQ_GOV_WHEATLEY
+ 	tristate "'wheatley' cpufreq governor"
+ 	depends on CPU_FREQ 
+
+config CPU_FREQ_GOV_BLU_ACTIVE
+	tristate "'blu_active' cpufreq policy governor"
+	default y
+	help
+	  'blu_active' - This driver adds a dynamic cpufreq policy governor
+	  designed for latency-sensitive workloads.
+
+	  This governor attempts to reduce the latency of clock
+	  increases so that the system is more responsive to
+	  interactive workloads.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cpufreq_blu_active.
+
+	  If in doubt, say N.
+
+config CPU_FREQ_GOV_YANKACTIVE
+ 	tristate "'yankactive' cpufreq policy governor"
+	default y
+ 	help
+   	  'yankactive' - This driver adds a dynamic cpufreq policy governor designed for latency-sensitive workloads. The governor is based on interactive with just different default settings and can be achieved using interactive with a script. This is added for simplification purposes for myself.
+
+
+config CPU_FREQ_GOV_LAGFREE
+	tristate "'lagfree' cpufreq governor"
+	depends on CPU_FREQ
+
+
+config CPU_FREQ_GOV_TRIPNDROID
+    tristate "'tripndroid' cpufreq governor"
+    depends on CPU_FREQ
+    help
+	  Custom cpu governor designed specificly for multi cpu mobile devices.
+	  Aiming at a balance between performance and battery lifetime, but it
+	  hangs a little bit more towards performance at low latencys.
+
+
+
+config LAZYPLUG
+	bool "Conservative hotplugging for generic devices"
+	default y
+	help
+	  This enables the conservative hotplugging, lazyplug by arter97
+	  based on intelli_plug. Refer to the comments for more info.
+
+
+config CPU_FREQ_GOV_CULTIVATION
+	tristate "'cultivation' cpufreq governor"
+	depends on CPU_FREQ
+	help
+	  'cultivation' - another tuned interactive with extra options
+
+
+
+
 
 config CPU_BOOST
 	tristate "Event base short term CPU freq boost"
