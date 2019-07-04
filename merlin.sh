@@ -1,12 +1,10 @@
 KERNEL_DIR=$PWD
-#Anykernel_DIR=$KERNEL_DIR/Anykernel2/merlin
-#TOOLCHAINDIR=$(pwd)/toolchain/linaro-7.2
 TOOLCHAINDIR=/home/KERNEL/toolchain/linaro-7.3.1
 DATE=$(date +"%d%m%Y")
 KERNEL_NAME="Life-Of"
 DEVICE="-Merlin"
 VER="-v0"
-TYPE="-OREO"
+TYPE="-OREO/PIE"
 
 
 export ARCH=arm
