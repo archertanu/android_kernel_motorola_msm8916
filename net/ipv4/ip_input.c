@@ -379,19 +379,12 @@ static int ip_rcv_finish(struct sk_buff *skb)
 		 * this is 802.11 protecting against cross-station spoofing (the
 		 * so-called "hole-196" attack) so do it for both.
 		 */
-		if (in_dev &&
-<<<<<<< HEAD
-		    IN_DEV_ORCONF(in_dev, DROP_UNICAST_IN_L2_MULTICAST))
-			goto drop;
-	}
-=======
+            if (in_dev &&
 		    IN_DEV_ORCONF(in_dev, DROP_UNICAST_IN_L2_MULTICAST) &&
 		    (skb->pkt_type == PACKET_BROADCAST ||
 		     skb->pkt_type == PACKET_MULTICAST))
 			goto drop;
 	}
-
->>>>>>> 9ca32de8530... ipv4: add option to drop unicast encapsulated in L2 multicast
 
 	return dst_input(skb);
 
